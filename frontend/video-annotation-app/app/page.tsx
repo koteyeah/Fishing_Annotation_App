@@ -17,8 +17,13 @@ export default function Page() {
   const [absoluteTimeCode, setAbsoluteTimeCode] = useState<number | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
   const [activeAction, setActiveAction] = useState<string | null>(null);
   const [actionRecords, setActionRecords] = useState<ActionRecord[]>([]);
+
+  const [isFishing, setIsFishing] = useState<boolean>(false);
+  const [fishingRecords, setFishingRecords] = useState<ActionRecord[]>([]);
+
   const [note, setNote] = useState<string>("");
 
   // タイムコードを秒に変換
@@ -66,38 +71,59 @@ export default function Page() {
       }
     }
   };
-  const handleActionButtonClick = (action: string) => {
-    if (videoRef.current && absoluteTimeCode !== null) {
-      const currentTime = videoRef.current.currentTime;
-      const combinedSeconds = absoluteTimeCode + currentTime;
-      const combinedTimeCode = secondsToTimeCode(combinedSeconds);
 
-      if (activeAction === action) {
-        // 終了時刻を記録してリストに保存
-        setActionRecords((prevRecords) =>
-          prevRecords.map((record) =>
-            record.action === action && record.endTime === null
-              ? { ...record, endTime: combinedTimeCode }
-              : record
+  // アクションボタンを押した時の処理
+  const handleActionButtonClick = (action: string) => {
+    if (!videoRef.current || absoluteTimeCode === null) return;
+
+    const currentTime = videoRef.current.currentTime;
+    const combinedSeconds = absoluteTimeCode + currentTime;
+    const combinedTimeCode = secondsToTimeCode(combinedSeconds);
+
+    if (action === "釣り") {
+      if (isFishing) {
+        // 釣りの終了
+        setFishingRecords((prev) =>
+          prev.map((r) =>
+            r.endTime === null ? { ...r, endTime: combinedTimeCode } : r
           )
         );
-        setActiveAction(null); // 動作を解除
       } else {
-        // 新しい動作を開始時刻として記録
-        setActionRecords((prevRecords) => [
-          ...prevRecords,
+        // 釣りの開始
+        setFishingRecords((prev) => [
+          ...prev,
+          { action: "釣り", startTime: combinedTimeCode, endTime: null },
+        ]);
+      }
+      setIsFishing(!isFishing);
+    } else {
+      if (activeAction === action) {
+        // アクションの終了
+        setActionRecords((prev) =>
+          prev.map((r) =>
+            r.action === action && r.endTime === null
+              ? { ...r, endTime: combinedTimeCode }
+              : r
+          )
+        );
+        setActiveAction(null);
+      } else {
+        // アクションの開始
+        setActionRecords((prev) => [
+          ...prev,
           { action, startTime: combinedTimeCode, endTime: null },
         ]);
-        setActiveAction(action); // 現在の動作を設定
+        setActiveAction(action);
       }
     }
   };
 
+  // アクションログをタブ区切り形式で表示
   const formatRecordsForSpreadsheet = (action: string): string => {
-    return actionRecords
-      .filter((record) => record.action === action && record.endTime !== null) // 該当アクションかつ終了時刻がある記録
-      .map((record) => `${record.startTime}\t${record.endTime}`) // タブ区切り
-      .join("\n"); // 改行で区切る
+    return [...actionRecords, ...fishingRecords]
+      .filter((record) => record.action === action && record.endTime !== null)
+      .map((record) => `${record.startTime}\t${record.endTime}`)
+      .join("\n");
   };
 
   return (
@@ -111,6 +137,7 @@ export default function Page() {
         />
         <ActionButtons
           activeAction={activeAction}
+          isFishing={isFishing}
           handleActionButtonClick={handleActionButtonClick}
         />
         <NotesInput note={note} setNote={setNote} />
@@ -119,7 +146,7 @@ export default function Page() {
       {/* 右側 */}
       <div className="w-1/3 p-4 bg-white shadow rounded ml-4">
         <ActionLogs
-          actionRecords={actionRecords}
+          actionRecords={[...actionRecords, ...fishingRecords]}
           formatRecordsForSpreadsheet={formatRecordsForSpreadsheet}
         />
       </div>

@@ -13,8 +13,7 @@ export default function ActionLogs({
   actionRecords,
   formatRecordsForSpreadsheet,
 }: ActionLogsProps) {
-  const actions = ["釣りあげ動作", "仕掛け動作", "仕掛け回収動作"];
-
+  const actions = ["釣りあげ動作", "仕掛け動作", "仕掛け回収動作", "釣り"];
   return (
     <div>
       {actions.map((action) => (
