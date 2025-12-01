@@ -4,12 +4,17 @@ import av
 import threading
 import tempfile
 import os
+import logging
 
 app = Flask(__name__)
 CORS(app)
+app.logger.setLevel(logging.INFO)
 
 def seconds_to_timecode(start_code: str, offset_sec: float) -> str:
-    h, m, s = map(int, start_code.split(":"))
+    # timecode が "hh:mm:ss:ff" のようにフレームまで含む場合があるので、
+    # 先頭3つ（hh, mm, ss）だけを使う
+    parts = start_code.split(":")
+    h, m, s = map(int, parts[:3])
     total_seconds = h * 3600 + m * 60 + s + offset_sec
     h = int(total_seconds // 3600)
     m = int((total_seconds % 3600) // 60)
@@ -21,27 +26,38 @@ def process_end_timecode(file_path: str, start_timecode: str):
         container = av.open(file_path)
         video_stream = next((s for s in container.streams if s.type == 'video'), None)
         if not video_stream:
-            print("❌ BG: No video stream found", flush=True)
+            app.logger.error("❌ BG: No video stream found")
             return
 
-        last_pts = None
-        for frame in container.decode(video_stream):
-            last_pts = frame.pts
+        # できるだけ高速に尺を取得する（全フレームをデコードしない）
+        end_offset_seconds: float | None = None
 
-        if last_pts is None:
-            print("❌ BG: Failed to decode any frame", flush=True)
+        if video_stream.duration is not None:
+            # duration * time_base で秒に変換
+            end_offset_seconds = float(video_stream.duration * video_stream.time_base)
+            app.logger.info(
+                "ℹ️ BG: duration from video_stream.duration: %s seconds",
+                end_offset_seconds,
+            )
+        elif container.duration is not None:
+            # コンテナ全体の duration を使用（av.time_base で秒に変換）
+            end_offset_seconds = float(container.duration * av.time_base)
+            app.logger.info(
+                "ℹ️ BG: duration from container.duration: %s seconds",
+                end_offset_seconds,
+            )
+        else:
+            app.logger.error("❌ BG: Unable to determine duration")
             return
 
-        time_base = video_stream.time_base
-        end_offset_seconds = float(last_pts * time_base)
         end_timecode = seconds_to_timecode(start_timecode.split(";")[0], end_offset_seconds)
 
-        print("🟡 BG: Start Timecode:", start_timecode, flush=True)
-        print("✅ BG: End Timecode  :", end_timecode, flush=True)
-        print(f"{start_timecode}\t{end_timecode}", flush=True)
+        app.logger.info("🟡 BG: Start Timecode: %s", start_timecode)
+        app.logger.info("✅ BG: End Timecode  : %s", end_timecode)
+        app.logger.info("%s\t%s", start_timecode, end_timecode)
 
     except Exception as e:
-        print("❌ BG: Error during processing:", str(e), flush=True)
+        app.logger.exception("❌ BG: Error during processing")
     finally:
         if os.path.exists(file_path):
             os.remove(file_path)  # クリーンアップ
@@ -54,6 +70,7 @@ def get_metadata():
 
     file = request.files['file']
     try:
+        app.logger.warning("🟡 BG: get_metadata called, starting metadata extraction")
         container = av.open(file)
         video_stream = next((s for s in container.streams if s.type == 'video'), None)
         if not video_stream:
@@ -69,11 +86,13 @@ def get_metadata():
         with open(tmp.name, 'wb') as f:
             shutil.copyfileobj(file.stream, f)
 
-        # ✅ 保存完了後にスレッド起動
-        threading.Thread(target=process_end_timecode, args=(tmp.name, start_timecode)).start()
+        # ✅ 保存完了後に終了タイムコードをバックグラウンドで計算
+        app.logger.warning("🟡 BG: starting background thread for end timecode (fast duration logic)")
+        threading.Thread(target=process_end_timecode, args=(tmp.name, start_timecode), daemon=True).start()
 
         return jsonify({"timecode": start_timecode})
     except Exception as e:
+        app.logger.exception("❌ BG: Error in get_metadata")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':

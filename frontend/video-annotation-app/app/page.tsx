@@ -80,40 +80,44 @@ export default function Page() {
     const combinedSeconds = absoluteTimeCode + currentTime;
     const combinedTimeCode = secondsToTimeCode(combinedSeconds);
 
-    if (action === "釣り") {
-      if (isFishing) {
-        // 釣りの終了
+    if (activeAction === action) {
+      // アクションの終了
+      setActionRecords((prev) =>
+        prev.map((r) =>
+          r.action === action && r.endTime === null
+            ? { ...r, endTime: combinedTimeCode }
+            : r
+        )
+      );
+      setActiveAction(null);
+
+      // 釣りあげ動作 or 仕掛け回収動作 が終了したら「釣り中」も終了
+      if (
+        (action === "釣りあげ動作" || action === "仕掛け回収動作") &&
+        isFishing
+      ) {
         setFishingRecords((prev) =>
           prev.map((r) =>
             r.endTime === null ? { ...r, endTime: combinedTimeCode } : r
           )
         );
-      } else {
-        // 釣りの開始
+        setIsFishing(false);
+      }
+    } else {
+      // アクションの開始
+      setActionRecords((prev) => [
+        ...prev,
+        { action, startTime: combinedTimeCode, endTime: null },
+      ]);
+      setActiveAction(action);
+
+      // 仕掛け動作が開始したら「釣り中」を開始
+      if (action === "仕掛け動作" && !isFishing) {
         setFishingRecords((prev) => [
           ...prev,
           { action: "釣り", startTime: combinedTimeCode, endTime: null },
         ]);
-      }
-      setIsFishing(!isFishing);
-    } else {
-      if (activeAction === action) {
-        // アクションの終了
-        setActionRecords((prev) =>
-          prev.map((r) =>
-            r.action === action && r.endTime === null
-              ? { ...r, endTime: combinedTimeCode }
-              : r
-          )
-        );
-        setActiveAction(null);
-      } else {
-        // アクションの開始
-        setActionRecords((prev) => [
-          ...prev,
-          { action, startTime: combinedTimeCode, endTime: null },
-        ]);
-        setActiveAction(action);
+        setIsFishing(true);
       }
     }
   };
@@ -134,10 +138,10 @@ export default function Page() {
           videoUrl={videoUrl}
           handleFileUpload={handleFileUpload}
           videoRef={videoRef}
+          isFishing={isFishing}
         />
         <ActionButtons
           activeAction={activeAction}
-          isFishing={isFishing}
           handleActionButtonClick={handleActionButtonClick}
         />
         <NotesInput note={note} setNote={setNote} />
