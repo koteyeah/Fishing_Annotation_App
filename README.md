@@ -51,7 +51,7 @@ Fishing_Annotation_App/
 ### 1. フロントエンドのセットアップ (Next.js)
 
 ```sh
-cd frontend
+cd frontend/video-annotation-app
 npm install
 npm run dev
 ```
